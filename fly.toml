@@ -1,9 +1,9 @@
-# fly.toml app configuration file generated for postman-echo-mcp-hidden-mountain-3619 on 2025-04-22T13:28:00-07:00
+# fly.toml app configuration file generated for postman-echo-mcp on 2025-04-22T13:36:13-07:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'postman-echo-mcp-hidden-mountain-3619'
+app = 'postman-echo-mcp'
 primary_region = 'iad'
 
 [build]
@@ -28,3 +28,6 @@ primary_region = 'iad'
   memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
+
+[scale]
+  count = 1

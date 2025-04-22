@@ -7,6 +7,8 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { InMemoryEventStore } from "./lib/inMemoryEventStore.js";
 
+import { app as authenticatedApp } from "./auth.js"
+
 import express, { Request, Response } from "express";
 
 const { TRANSPORT } = process.env
@@ -137,14 +139,17 @@ server.prompt(
   })
 );
 
+let transports: Record<string, StreamableHTTPServerTransport | SSEServerTransport> = {};
+
 if (TRANSPORT === 'sse' || TRANSPORT === 'streamable-http') {
   const app = express();
 
   app.use(express.json());
 
+  app.use("/auth", authenticatedApp)
+
   // to support multiple simultaneous connections we have a lookup object from
   // sessionId to transport
-  const transports: Record<string, StreamableHTTPServerTransport | SSEServerTransport> = {};
   app.all('/', async (req: Request, res: Response) => {
     console.log(`Received ${req.method} request to /mcp`);
   
@@ -238,3 +243,23 @@ if (TRANSPORT === 'sse' || TRANSPORT === 'streamable-http') {
     process.exit(1);
   });
 }
+
+process.on('SIGINT', async () => {
+  console.log('Shutting down server...');
+  try {
+      // Close all active transports to properly clean up resources
+    for (const sessionId in transports) {
+      try {
+        console.log(`Closing transport for session ${sessionId}`);
+        await transports[sessionId].close();
+        delete transports[sessionId];
+      } catch (error) {
+        console.error(`Error closing transport for session ${sessionId}:`, error);
+      }
+    }
+    await server.close();
+    process.exit(0);
+  } catch (e) {
+    console.error(e)
+  }
+});
