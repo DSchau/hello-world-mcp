@@ -270,4 +270,6 @@ export function registerPostmanEchoDateTimeTools(server: McpServer, namespace = 
       };
     }
   );
+
+  return server
 }
