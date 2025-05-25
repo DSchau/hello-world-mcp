@@ -6,6 +6,8 @@ import { z } from "zod";
 import { Hono } from "hono";
 import { McpAgent } from "agents/mcp";
 
+import { registerPostmanEchoDateTimeTools } from "./date-time.js";
+
 const app = new Hono();
 export class MCPEcho extends McpAgent {
   static server = new McpServer({
@@ -24,22 +26,11 @@ export class MCPEcho extends McpAgent {
       }),
     );
 
-    this.server.tool("echo", { message: z.string() }, async ({ message }) => ({
+    this.server.tool("echo", "Say hello with postman echo's MCP server", { message: z.string() }, async ({ message }) => ({
       content: [{ type: "text", text: `Tool echo: ${message}` }],
     }));
 
-    this.server.tool("currentTime", "Get the current time", {}, async () => {
-      const res = await fetch("https://postman-echo.com/time/now");
-      const time = await res.text();
-      return {
-        content: [
-          {
-            type: "text",
-            text: `🕒 Current UTC time: ${time || "Unavailable"}`,
-          },
-        ],
-      };
-    });
+    registerPostmanEchoDateTimeTools(this.server);
 
     this.server.tool(
       "delay",
@@ -57,63 +48,6 @@ export class MCPEcho extends McpAgent {
       },
     );
 
-    this.server.tool(
-      "validateTime",
-      "Validate the given timestamp with ISO 8601",
-      { timestamp: z.string() },
-      async ({ timestamp }) => {
-        const res = await fetch(
-          `https://postman-echo.com/time/valid?timestamp=${encodeURIComponent(timestamp)}`,
-        );
-        const data = await res.json();
-        return {
-          content: [
-            {
-              type: "text",
-              text: data.valid
-                ? `✅ "${timestamp}" is a valid ISO 8601 timestamp.`
-                : `❌ "${timestamp}" is NOT a valid ISO 8601 timestamp.`,
-            },
-          ],
-        };
-      },
-    );
-
-    this.server.tool(
-      "formatTimestamp",
-      "Format timestamp given the passed formatting string",
-      { timestamp: z.string(), format: z.string() },
-      async ({ timestamp, format }) => {
-        const url = `https://postman-echo.com/time/format?timestamp=${encodeURIComponent(timestamp)}&format=${encodeURIComponent(format)}`;
-        const res = await fetch(url);
-        const formatted = await res.text();
-        return {
-          content: [
-            { type: "text", text: `🧾 Formatted timestamp: ${formatted}` },
-          ],
-        };
-      },
-    );
-
-    this.server.tool(
-      "convertTimestamp",
-      "Convert a timestamp string to a standardized UTC format",
-      { timestamp: z.string() },
-      async ({ timestamp }) => {
-        const res = await fetch(
-          `https://postman-echo.com/time/timestamp?timestamp=${encodeURIComponent(timestamp)}`,
-        );
-        const data = await res.json();
-        return {
-          content: [
-            {
-              type: "text",
-              text: `📅 Converted timestamp: ${data.utc || "Conversion failed"}`,
-            },
-          ],
-        };
-      },
-    );
 
     this.server.prompt("echo", { message: z.string() }, ({ message }) => ({
       messages: [
