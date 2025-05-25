@@ -4,10 +4,7 @@ import {
 } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { Hono } from "hono";
-import { serve } from "@hono/node-server";
 import { McpAgent } from "agents/mcp";
-
-const { TRANSPORT, LOCAL } = process.env;
 
 const app = new Hono();
 export class MCPEcho extends McpAgent {

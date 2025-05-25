@@ -4,9 +4,6 @@
   "main": "src/index.ts",
   // Enable Node.js compatibility features
   "compatibility_flags": ["nodejs_compat"],
-  "vars": {
-    "TRANSPORT": "streamable-http",
-  },
   "migrations": [
     {
       "new_sqlite_classes": ["MCPEcho"],
