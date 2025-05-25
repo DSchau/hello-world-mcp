@@ -28,7 +28,7 @@ export class MCPEcho extends McpAgent {
       content: [{ type: "text", text: `Tool echo: ${message}` }],
     }));
 
-    this.server.tool("currentTime", {}, async () => {
+    this.server.tool("currentTime", "Get the current time", {}, async () => {
       const res = await fetch("https://postman-echo.com/time/now");
       const time = await res.text();
       return {
@@ -42,7 +42,24 @@ export class MCPEcho extends McpAgent {
     });
 
     this.server.tool(
+      "delay",
+      "Delay n seconds which simulates a slow tool call",
+      { seconds: z.number() },
+      async ({ seconds }) => {
+        const url = `https://postman-echo.com/delay/${seconds}`;
+        const res = await fetch(url);
+        const formatted = await res.text();
+        return {
+          content: [
+            { type: "text", text: formatted },
+          ],
+        };
+      },
+    );
+
+    this.server.tool(
       "validateTime",
+      "Validate the given timestamp with ISO 8601",
       { timestamp: z.string() },
       async ({ timestamp }) => {
         const res = await fetch(
@@ -64,6 +81,7 @@ export class MCPEcho extends McpAgent {
 
     this.server.tool(
       "formatTimestamp",
+      "Format timestamp given the passed formatting string",
       { timestamp: z.string(), format: z.string() },
       async ({ timestamp, format }) => {
         const url = `https://postman-echo.com/time/format?timestamp=${encodeURIComponent(timestamp)}&format=${encodeURIComponent(format)}`;
@@ -79,6 +97,7 @@ export class MCPEcho extends McpAgent {
 
     this.server.tool(
       "convertTimestamp",
+      "Convert a timestamp string to a standardized UTC format",
       { timestamp: z.string() },
       async ({ timestamp }) => {
         const res = await fetch(
