@@ -1,265 +1,119 @@
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  McpServer,
+  ResourceTemplate,
+} from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { randomUUID } from "node:crypto";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { InMemoryEventStore } from "./lib/inMemoryEventStore.js";
+import { Hono } from "hono";
+import { serve } from "@hono/node-server";
+import { McpAgent } from "agents/mcp";
 
-import { app as authenticatedApp } from "./auth.js"
+const { TRANSPORT, LOCAL } = process.env;
 
-import express, { Request, Response } from "express";
-
-const { TRANSPORT } = process.env
-
-const server = new McpServer({
-  name: "Echo",
-  version: "1.0.0"
-});
-
-server.resource(
-  "echo",
-  new ResourceTemplate("echo://{message}", { list: undefined }),
-  async (uri, { message }) => ({
-    contents: [{
-      uri: uri.href,
-      text: `Resource echo: ${message}`
-    }]
-  })
-);
-
-server.tool(
-  "echo",
-  { message: z.string() },
-  async ({ message }) => ({
-    content: [{ type: "text", text: `Tool echo: ${message}` }]
-  })
-);
-
-server.tool(
-  "currentTime",
-  {},
-  async () => {
-    const res = await fetch("https://postman-echo.com/time/now");
-    const time = await res.text();
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: `🕒 Current UTC time: ${time || "Unavailable"}`
-        }
-      ]
-    };
-  }
-);
-
-// Tool: Validate a timestamp (ISO 8601)
-server.tool(
-  "validateTime",
-  {
-    timestamp: z.string()
-  },
-  async ({ timestamp }) => {
-    const res = await fetch(
-      `https://postman-echo.com/time/valid?timestamp=${encodeURIComponent(timestamp)}`
-    );
-    const data = await res.json();
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: data.valid
-            ? `✅ "${timestamp}" is a valid ISO 8601 timestamp.`
-            : `❌ "${timestamp}" is NOT a valid ISO 8601 timestamp.`
-        }
-      ]
-    };
-  }
-);
-
-server.tool(
-  "formatTimestamp",
-  {
-    timestamp: z.string(),
-    format: z.string()
-  },
-  async ({ timestamp, format }) => {
-    const url = `https://postman-echo.com/time/format?timestamp=${encodeURIComponent(timestamp)}&format=${encodeURIComponent(format)}`;
-    const res = await fetch(url);
-    const formatted = await res.text();
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: `🧾 Formatted timestamp: ${formatted}`
-        }
-      ]
-    };
-  }
-);
-
-// Tool: Convert a timestamp to UTC date string
-server.tool(
-  "convertTimestamp",
-  {
-    timestamp: z.string()
-  },
-  async ({ timestamp }) => {
-    const res = await fetch(
-      `https://postman-echo.com/time/timestamp?timestamp=${encodeURIComponent(timestamp)}`
-    );
-    const data = await res.json();
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: `📅 Converted timestamp: ${data.utc || "Conversion failed"}`
-        }
-      ]
-    };
-  }
-);
-
-server.prompt(
-  "echo",
-  { message: z.string() },
-  ({ message }) => ({
-    messages: [{
-      role: "user",
-      content: {
-        type: "text",
-        text: `Please process this message: ${message}`
-      }
-    }]
-  })
-);
-
-let transports: Record<string, StreamableHTTPServerTransport | SSEServerTransport> = {};
-
-if (TRANSPORT === 'sse' || TRANSPORT === 'streamable-http') {
-  const app = express();
-
-  app.use(express.json());
-
-  app.use("/auth", authenticatedApp)
-
-  // to support multiple simultaneous connections we have a lookup object from
-  // sessionId to transport
-  app.all('/', async (req: Request, res: Response) => {
-    console.log(`Received ${req.method} request to /mcp`);
-  
-    try {
-      // Check for existing session ID
-      const sessionId = req.headers['mcp-session-id'] as string | undefined;
-      let transport: StreamableHTTPServerTransport;
-  
-      if (sessionId && transports[sessionId]) {
-        // Check if the transport is of the correct type
-        const existingTransport = transports[sessionId];
-        if (existingTransport instanceof StreamableHTTPServerTransport) {
-          // Reuse existing transport
-          transport = existingTransport;
-        } else {
-          // Transport exists but is not a StreamableHTTPServerTransport (could be SSEServerTransport)
-          res.status(400).json({
-            jsonrpc: '2.0',
-            error: {
-              code: -32000,
-              message: 'Bad Request: Session exists but uses a different transport protocol',
-            },
-            id: null,
-          });
-          return;
-        }
-      } else if (!sessionId && req.method === 'POST' && isInitializeRequest(req.body)) {
-        const eventStore = new InMemoryEventStore();
-        transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => randomUUID(),
-          eventStore, // Enable resumability
-          onsessioninitialized: (sessionId) => {
-            // Store the transport by session ID when session is initialized
-            console.log(`StreamableHTTP session initialized with ID: ${sessionId}`);
-            transports[sessionId] = transport;
-          }
-        });
-  
-        // Set up onclose handler to clean up transport when closed
-        transport.onclose = () => {
-          const sid = transport.sessionId;
-          if (sid && transports[sid]) {
-            console.log(`Transport closed for session ${sid}, removing from transports map`);
-            delete transports[sid];
-          }
-        };
-  
-        // Connect the transport to the MCP server
-        await server.connect(transport);
-      } else {
-        // Invalid request - no session ID or not initialization request
-        res.status(400).json({
-          jsonrpc: '2.0',
-          error: {
-            code: -32000,
-            message: 'Bad Request: No valid session ID provided',
-          },
-          id: null,
-        });
-        return;
-      }
-  
-      // Handle the request with the transport
-      await transport.handleRequest(req, res, req.body);
-    } catch (error) {
-      console.error('Error handling MCP request:', error);
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: '2.0',
-          error: {
-            code: -32603,
-            message: 'Internal server error',
-          },
-          id: null,
-        });
-      }
-    }
+const app = new Hono();
+export class MCPEcho extends McpAgent {
+  static server = new McpServer({
+    name: "Echo",
+    version: "1.0.0",
   });
-    app.listen(3001, () => {
-      console.info(`mcp.postman-echo.com running with transport:${TRANSPORT}`);
+
+  server = MCPEcho.server;
+
+  async init() {
+    this.server.resource(
+      "echo",
+      new ResourceTemplate("echo://{message}", { list: undefined }),
+      async (uri, { message }) => ({
+        contents: [{ uri: uri.href, text: `Resource echo: ${message}` }],
+      }),
+    );
+
+    this.server.tool("echo", { message: z.string() }, async ({ message }) => ({
+      content: [{ type: "text", text: `Tool echo: ${message}` }],
+    }));
+
+    this.server.tool("currentTime", {}, async () => {
+      const res = await fetch("https://postman-echo.com/time/now");
+      const time = await res.text();
+      return {
+        content: [
+          {
+            type: "text",
+            text: `🕒 Current UTC time: ${time || "Unavailable"}`,
+          },
+        ],
+      };
     });
-} else {
-  async function main() {
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
-    console.info("mcp.postman-echo.com running on stdio");
+
+    this.server.tool(
+      "validateTime",
+      { timestamp: z.string() },
+      async ({ timestamp }) => {
+        const res = await fetch(
+          `https://postman-echo.com/time/valid?timestamp=${encodeURIComponent(timestamp)}`,
+        );
+        const data = await res.json();
+        return {
+          content: [
+            {
+              type: "text",
+              text: data.valid
+                ? `✅ "${timestamp}" is a valid ISO 8601 timestamp.`
+                : `❌ "${timestamp}" is NOT a valid ISO 8601 timestamp.`,
+            },
+          ],
+        };
+      },
+    );
+
+    this.server.tool(
+      "formatTimestamp",
+      { timestamp: z.string(), format: z.string() },
+      async ({ timestamp, format }) => {
+        const url = `https://postman-echo.com/time/format?timestamp=${encodeURIComponent(timestamp)}&format=${encodeURIComponent(format)}`;
+        const res = await fetch(url);
+        const formatted = await res.text();
+        return {
+          content: [
+            { type: "text", text: `🧾 Formatted timestamp: ${formatted}` },
+          ],
+        };
+      },
+    );
+
+    this.server.tool(
+      "convertTimestamp",
+      { timestamp: z.string() },
+      async ({ timestamp }) => {
+        const res = await fetch(
+          `https://postman-echo.com/time/timestamp?timestamp=${encodeURIComponent(timestamp)}`,
+        );
+        const data = await res.json();
+        return {
+          content: [
+            {
+              type: "text",
+              text: `📅 Converted timestamp: ${data.utc || "Conversion failed"}`,
+            },
+          ],
+        };
+      },
+    );
+
+    this.server.prompt("echo", { message: z.string() }, ({ message }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Please process this message: ${message}`,
+          },
+        },
+      ],
+    }));
   }
-  
-  main().catch((error) => {
-    console.error("Fatal error in main():", error);
-    process.exit(1);
-  });
 }
 
-process.on('SIGINT', async () => {
-  console.log('Shutting down server...');
-  try {
-      // Close all active transports to properly clean up resources
-    for (const sessionId in transports) {
-      try {
-        console.log(`Closing transport for session ${sessionId}`);
-        await transports[sessionId].close();
-        delete transports[sessionId];
-      } catch (error) {
-        console.error(`Error closing transport for session ${sessionId}:`, error);
-      }
-    }
-    await server.close();
-    process.exit(0);
-  } catch (e) {
-    console.error(e)
-  }
-});
+app.mount("/", MCPEcho.serve("/").fetch, { replaceRequest: false });
+app.mount("/sse", MCPEcho.serveSSE("/sse").fetch, { replaceRequest: false });
+
+export default app;
