@@ -2,6 +2,8 @@
 
 This project runs an [MCP](https://modelcontext.org) Agent on Cloudflare Workers using Durable Objects and Hono.
 
+It deploys streamable HTTP to the root domain (/) and a fallback SSE server as needed to /sse.
+
 ## Getting Started
 
 ### Install dependencies
@@ -16,7 +18,7 @@ npm install
 npm run dev
 ```
 
-This will run `wrangler dev`, which did not work all that well in my experience.
+This will run `wrangler dev` which simulates the deployed worker locally. Typically exposes the worker at localhost:8787.
 
 ### Deploy
 
