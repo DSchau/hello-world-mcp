@@ -1,0 +1,29 @@
+{
+  "name": "postman-mcp-echo",
+  "compatibility_date": "2025-05-24",
+  "main": "src/index.ts",
+  // Enable Node.js compatibility features
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "vars": {
+    "TRANSPORT": "streamable-http"
+  },
+  "migrations": [
+		{
+			"new_sqlite_classes": ["MCPEcho"],
+			"tag": "v1"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"class_name": "MCPEcho",
+				"name": "MCP_OBJECT"
+			}
+		]
+	},
+	"observability": {
+		"enabled": true
+	}
+}
