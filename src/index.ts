@@ -86,21 +86,7 @@ export class MCPEcho extends McpAgent {
   }
 }
 
-if (TRANSPORT === "sse" || TRANSPORT === 'streamable-http') {
-  app.mount('/', MCPEcho.serve('/').fetch, { replaceRequest: false });
-  app.mount('/sse', MCPEcho.serveSSE('/sse').fetch, { replaceRequest: false })
-
-  if (LOCAL) {
-    serve(
-      {
-        fetch: app.fetch,
-        port: 3001,
-      },
-      () => {
-        console.info(`mcp.postman-echo.com running with transport: ${TRANSPORT}`);
-      }
-    );
-  }
-}
+app.mount('/', MCPEcho.serve('/').fetch, { replaceRequest: false });
+app.mount('/sse', MCPEcho.serveSSE('/sse').fetch, { replaceRequest: false })
 
 export default app
